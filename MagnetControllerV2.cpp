@@ -63,7 +63,7 @@ void MagnetController::shiftOutFrame(Frame *frame){
             }
             //Do stuff with the current IC. Set ON/OFF state and PWM value.
             //TODO: Duty cycle can be increased to uint16_t (max 4096)
-            upscaled = map(frame->get_duty_cycle_at(x,y),0,255,0,4096); 
+            upscaled = map(frame->get_pixel_intensity_at(x,y),0,255,0,4096); 
             current_ic->setPWM(x,0,upscaled);
         }
         ic_idx++;
