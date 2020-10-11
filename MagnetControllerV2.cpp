@@ -1,5 +1,6 @@
 #include "MagnetControllerV2.h"
 
+//#define DEBUG 1
 //Constructor
 MagnetController::MagnetController(int num_pcbs, uint8_t first_address, int magnets_per_pcb = 21, int fps = 2){
     _num_pcbs = num_pcbs;
@@ -17,8 +18,9 @@ MagnetController::MagnetController(int num_pcbs, uint8_t first_address, int magn
         //Only necessary to initiate one PCA9685 per PCB
         _ics_per_pcb = 1;
     }
-    _num_ics = _num_pcbs *_ics_per_pcb;
-    _ics = new Adafruit_PWMServoDriver *[_num_ics];
+    _num_ics = _num_pcbs * 2; //There will still be 2 ICs per pcb, even if we only initialize one of them.
+    _initialized_ics = _num_pcbs * _ics_per_pcb;
+    _ics = new Adafruit_PWMServoDriver *[_initialized_ics];
 
     for (int i = 0; i < _num_ics; i++)
     {
@@ -39,7 +41,7 @@ MagnetController::MagnetController(int num_pcbs, uint8_t first_address, int magn
 
 //Deconstructor
 MagnetController::~MagnetController(){
-    for (int i = 0; i < _num_ics; i++)
+    for (int i = 0; i < _initialized_ics; i++)
     {
         delete _ics[i];
     }
@@ -48,23 +50,45 @@ MagnetController::~MagnetController(){
 
 
 void MagnetController::shiftOutFrame(Frame *frame){
-    Adafruit_PWMServoDriver *current_ic;
+    Adafruit_PWMServoDriver *current_ic1;
+    Adafruit_PWMServoDriver *current_ic2; //only used when both ICs on the same board is initialized
+    
     int ic_idx = 0;
-    uint16_t upscaled; // TODO: delete this when the duty cycle of the Frame class has been increased to uint16_t (max 4096).
     for (int y = 0; y < _num_pcbs; y++)
     {
-        current_ic = _ics[ic_idx];
+        current_ic1 = _ics[ic_idx];
+        if (_ics_per_pcb == 2)
+        {
+            ic_idx++;
+            current_ic2 = _ics[ic_idx];
+        }
+        
         for (int x = 0; x < _magnets_per_pcb; x++)
         {
-            if(x == 16){
-                //Jump to next IC
-                ic_idx++;
-                current_ic = _ics[ic_idx];
-            }
             //Do stuff with the current IC. Set ON/OFF state and PWM value.
-            //TODO: Duty cycle can be increased to uint16_t (max 4096)
-            upscaled = map(frame->get_pixel_intensity_at(x,y),0,255,0,4096); 
-            current_ic->setPWM(x,0,upscaled);
+            
+            if (x < 16)
+            {
+                current_ic1->setPin(x, frame->get_pixel_intensity_at(x, y));
+            }else{
+                current_ic2->setPin(x - 16, frame->get_pixel_intensity_at(x, y));
+            }
+
+            # ifdef DEBUG:
+            Serial.print("Shifting out ");
+            Serial.print(frame->get_pixel_intensity_at(x, y));
+            Serial.print(" to pixel (x,y): (");
+            Serial.print(x);
+            Serial.print(",");
+            Serial.print(y);
+            Serial.print("). Readback value: ");
+            if (x < 16)
+            {
+                Serial.println(current_ic1->getPWM(x));   
+            }else{
+                Serial.println(current_ic2->getPWM(x-16));
+            }
+            #endif;
         }
         ic_idx++;
     }
@@ -102,7 +126,7 @@ void MagnetController::animationManagement(){
             }
 #ifdef DEBUG:
             Serial.print("Preparing to shift out frame number: ");
-            Serial.print(anim.get_current_frame_num());
+            Serial.print(_anim->get_current_frame_num());
             Serial.println();
 #endif
             shiftOutFrame(_anim->get_current_frame());

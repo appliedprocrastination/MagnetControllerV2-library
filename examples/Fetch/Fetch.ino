@@ -2,7 +2,7 @@
 #include <Animation.h>
 #include <SdFat.h>
 
-MagnetController fetch = MagnetController(1, 0b1000000, 21, 2);
+MagnetController fetch = MagnetController(1, 0b1000010, 21, 2);
 Animation anim;
 SdFatSdioEX sd;
 boolean sd_present = true;
@@ -24,8 +24,6 @@ void setup()
         Serial.println("SD initialitization failed. Read unsucessful.");
         sd_present = false;
     }
-    //Prepare a pointer for storing an Animation 
-    //anim = Animation(nullptr,1,true);
     
     //Read an animation from SD
     if (sd_present)
