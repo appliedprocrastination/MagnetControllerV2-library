@@ -19,14 +19,18 @@ public:
     ~MagnetController();
     //void playAnimation(Animation anim);
     void shiftOutFrame(Frame *frame);
+    void shiftOutPixel(int x, int y, uint16_t pixel_intensity);
     void playAnimation(Animation *anim, void (*anim_done_event_handler)(void) = nullptr);
+    void fade_pixels();
     void animationManagement();
-    
-private : int _num_pcbs;
+
+  private:
+    int _num_pcbs;
     int _magnets_per_pcb;
     int _ics_per_pcb;
     int _num_ics;
     int _initialized_ics;
+    bool fading = true; //This should be stored in the Animation object, but is here now for testing.
     Adafruit_PWMServoDriver **_ics;
     uint8_t _first_address;
     void (*_anim_done_event_handler)(void);

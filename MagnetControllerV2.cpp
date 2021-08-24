@@ -74,7 +74,7 @@ void MagnetController::shiftOutFrame(Frame *frame){
                 current_ic2->setPin(x - 16, frame->get_pixel_intensity_at(x, y));
             }
 
-            # ifdef DEBUG:
+            # ifdef DEBUG_VERBOSE:
             Serial.print("Shifting out ");
             Serial.print(frame->get_pixel_intensity_at(x, y));
             Serial.print(" to pixel (x,y): (");
@@ -92,7 +92,61 @@ void MagnetController::shiftOutFrame(Frame *frame){
         }
         ic_idx++;
     }
+    #ifdef DEBUG:
+    frame->print_to_terminal(true);
+    #endif
+    #ifdef DEBUG_VERBOSE:
+    frame->print_to_terminal(false);
+    #endif
    
+}
+
+void MagnetController::shiftOutPixel(int x, int y, uint16_t pixel_intensity)
+{
+    Adafruit_PWMServoDriver *current_ic1;
+    Adafruit_PWMServoDriver *current_ic2; //only used when both ICs on the same board is initialized
+
+    int ic_idx = 0;
+    for (int row = 0; row < _num_pcbs; row++)
+    {
+        current_ic1 = _ics[ic_idx];
+        if (_ics_per_pcb == 2)
+        {
+            ic_idx++;
+            current_ic2 = _ics[ic_idx];
+        }
+        ic_idx++;
+        if(row == y){
+            break;
+        }
+    }
+
+    if (x < 16)
+    {
+        current_ic1->setPin(x, pixel_intensity);
+    }
+    else
+    {
+        current_ic2->setPin(x - 16, pixel_intensity);
+    }
+    
+#ifdef DEBUG_VERBOSE:
+            Serial.print("Shifting out ");
+            Serial.print(pixel_intensity);
+            Serial.print(" to pixel (x,y): (");
+            Serial.print(x);
+            Serial.print(",");
+            Serial.print(y);
+            Serial.print("). Readback value: ");
+            if (x < 16)
+            {
+                Serial.println(current_ic1->getPWM(x));
+            }
+            else
+            {
+                Serial.println(current_ic2->getPWM(x - 16));
+            }
+#endif;
 }
 
 void MagnetController::playAnimation(Animation *anim, void (*anim_done_event_handler)(void) = nullptr)
@@ -109,7 +163,50 @@ void MagnetController::playAnimation(Animation *anim, void (*anim_done_event_han
     _time_for_next_frame = millis() + _frame_period;
 }
 
-void MagnetController::animationManagement(){
+void MagnetController::fade_pixels()
+{
+    //Fade out dying pixels (reducing the PWM value of pixels that are currently active but will be inactive in the next frame)
+    //Fade in waking pixels (increasing the PWM value of pixels that are currently inactive but will become active in the next frame)
+    unsigned long time_remaining = _time_for_next_frame - _time_this_refresh;
+    float percent_of_frame_period_remaining = (float)time_remaining / (float)_frame_period;
+    float min_intensity = 0;     //The lowest intensity that should be used during the fade. Intensities lower than this value will be converted to 0.
+    float fade_start_percentage = 0.5;   //At which percentage of completion (of the frames duration) the fade should start
+    if (percent_of_frame_period_remaining < fade_start_percentage) //&& time_remaining % 2 == 0
+    {
+        
+        Frame* curr_frame = _anim->get_current_frame();
+        Frame* next_frame = _anim->get_next_frame();
+        int cols = curr_frame->get_width();
+        int rows = curr_frame->get_height();
+        for (int y = 0; y < rows; y++)
+        {
+            for (int x = 0; x < cols; x++)
+            {
+                uint16_t curr_intensity =  curr_frame->get_pixel_intensity_at(x,y);
+                if (curr_intensity > 0 && next_frame->get_pixel_intensity_at(x,y) == 0)
+                {
+                    uint16_t intensity = curr_intensity * (percent_of_frame_period_remaining / fade_start_percentage);
+                    if (intensity < min_intensity)
+                    {
+                        intensity = 0;
+                    }
+                    
+                    shiftOutPixel(x, y, intensity);
+                }
+                else if (curr_intensity == 0 && next_frame->get_pixel_intensity_at(x, y) > 0)
+                {
+
+                    uint16_t intensity = DUTY_CYCLE_RESOLUTION * (1-(percent_of_frame_period_remaining / fade_start_percentage));
+                    shiftOutPixel(x, y, intensity);
+                }
+            }
+            
+        }
+    }
+}
+
+void MagnetController::animationManagement()
+{
     //This function must be called in the main loop of the parent program in order for the animation
     //to adhere to its given framerate. 
     _time_this_refresh = millis();
@@ -133,6 +230,11 @@ void MagnetController::animationManagement(){
 
             _time_for_next_frame += _frame_period;
         }
+        else if(fading=true)
+        {
+            fade_pixels();
+        }
+        
     }
     
 }
